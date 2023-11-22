@@ -154,3 +154,62 @@ function draw_grey_button (x, y, w, label) (
   set_color(0x141618);
   gfx_drawstr(label, 1, x+w, y+10);
 );
+
+function harmonic_phase(h1, h2) (
+  atan2(h1, h2);
+);
+
+function harmonic_amplitude(h1, h2) (
+  sqrt(pow(h1,2) + pow(h2,2));
+);
+
+function draw_harmonics(x, y, w, h, buf, nharm)
+local (harm_w, amp, i, mouse_active, hx, ph, yamp, phase, real, img, yphase)
+(
+  four.nharm = nharm;
+  set_color(0x666666);
+  gfx_rect(x - 2,y - 2,w + 4,h + 4);
+  set_color(COLOR_BG);
+  gfx_rect(x - 1, y - 1, w + 2, h + 2);
+  set_color(COLOR_ACTIVE);
+  harm_w = (w / nharm) | 0;
+  mouse_active = edit_mode && mouse.left && mouse_in_rect(x,y,w,h);
+
+  phase_mode ? gfx_a = 0.3;
+  loop(i=0; nharm,
+    amp = harmonic_amplitude(buf[i], buf[i+1]);
+    amp > 1 ? amp = 1;
+    hx = x + harm_w * i / 2; // harmonic x
+    gfx_rect(hx, y + h - floor(amp * h), harm_w - 1, amp * h);
+    !phase_mode && mouse_active && mouse_in_rect(hx, y, harm_w, h) ? (
+      yamp = mouse.control ? 0 : 1 - (mouse.y - y) / h;
+      phase = harmonic_phase(buf[i], buf[i+1]);
+      buf[i+1] = yamp * cos(phase); // real = r * cos(p)
+      buf[i] = yamp * sin(phase); // img = r * sin(p)
+    );
+    i += 2;
+  );
+  gfx_a = 0.75;
+  set_color(0xFFFFFF);
+  phase_mode ? (
+    loop(i=0; nharm,
+      phase = atan2(buf[i], buf[i+1]);
+      hx = x + harm_w * i / 2;
+      ph = phase/$pi*h/2; // phase height
+      phase >= 0 ? (
+        gfx_rect(hx, y + h/2 - ph, harm_w-1, max(ph, 1)|0);
+      ) : (
+        gfx_rect(hx, y + h/2, harm_w-1, max(-ph, 1)|0);
+      );
+      phase_mode && mouse_active && mouse_in_rect(hx, y, harm_w, h) ? (
+        yphase = mouse.control ? 0 : (mouse.y - y) / h * -2 - 1;
+        yphasee = yphase;
+        amp = harmonic_amplitude(buf[i], buf[i+1]);
+        buf[i+1] = amp * cos(yphase*$pi); // real
+        buf[i] = amp * sin(yphase*$pi); // img
+      );
+      i += 2;
+    );
+  );
+  gfx_a = 1;
+);
