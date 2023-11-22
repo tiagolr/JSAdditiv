@@ -25,10 +25,7 @@ import add.gfxlib.jsfx-inc
 import add.mouselib.jsfx-inc
 import add.fft_real_synth.jsfx-inc
 
-options:gfx_hz=60
-
-@serialize
-file_var(0, osc_free);
+options:gfx_hz=60 no_meter
 
 @init
 lfile = -1;
@@ -110,7 +107,7 @@ local (window)
 );
 
 /*
- * Generate wavetable from FFT
+ * Generate wavetable from FFT coeficients
  */
 function resynthesize() (
   four.four_setf(1);
@@ -157,6 +154,10 @@ function on_slider() (
 );
 
 filter.svf_set_sample_rate(srate);
+
+@serialize
+file_var(0, osc_free);
+file_mem(0, wavebuf, wavelen + four.size * 4);
 
 @slider
 
@@ -365,7 +366,7 @@ harm_index + 1< ceil(four.size / 34) ? (
   );
 );
 gfx_x = 320; gfx_y = 10-2;
-gfx_drawstr(sprintf(#, "%i / %i", harm_index + 1, 
+gfx_drawstr(sprintf(#, "%i / %i", harm_index + 1,
   ceil(four.size / 34), 1, gfx_x+10, gfx_y + 10));
 
 mouse.left_click && mouse_in_rect(160, 20, 340, 60) ? (
@@ -375,7 +376,7 @@ edit_mode && !mouse.left ? (
   edit_mode = 0;
   resynthesize();
 );
-max_harm = harm_index + 1 >= ceil(four.size / 34) ? (harm_index + 1) * 34 - four.size -1 : 34;
+max_harm = harm_index + 1 >= ceil(four.size / 34) ? (harm_index + 1) * 34 - four.size - 1 : 34;
 draw_harmonics(160, 20, 340, 60, four.coef+2 +harm_index*34*2, max_harm);
 
 draw_knob(20, 110, 2, "Vol", -12, -90, 0, 0, 0, sprintf(#, "%.1f Db", slider(2)));

@@ -166,7 +166,6 @@ function harmonic_amplitude(h1, h2) (
 function draw_harmonics(x, y, w, h, buf, nharm)
 local (harm_w, amp, i, mouse_active, hx, ph, yamp, phase, real, img, yphase)
 (
-  four.nharm = nharm;
   set_color(0x666666);
   gfx_rect(x - 2,y - 2,w + 4,h + 4);
   set_color(COLOR_BG);
