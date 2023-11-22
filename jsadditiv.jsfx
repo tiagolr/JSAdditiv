@@ -23,6 +23,7 @@ import add.adsr.jsfx-inc
 import add.svf_filter.jsfx-inc
 import add.gfxlib.jsfx-inc
 import add.mouselib.jsfx-inc
+import add.fft_real_synth.jsfx-inc
 
 options:gfx_hz=60
 
@@ -59,14 +60,34 @@ function normalize_wave(buf, len) (
 );
 
 function stereo_to_mono_wave(buf, len) (
-  i = 0; loop((len / 2) | 0,
+  loop(i = 0; (len / 2) | 0,
     buf[i] = (buf[i*2] + buf[i*2+1]) * 0.5;
     i += 1;
   );
 );
 
+/**
+ *  Convert wave into harmonics using FFT
+ */
+function synthesize(buf, len)
+local (window)
+(
+  window = 512 >= len ? 512
+         : 1024 >= len ? 1024
+         : 2048 >= len ? 2048
+         : 4096;
+  four.four_init(buf, window);
+  four.four_fft();
+);
+
+function resynthesize() (
+  four.four_setf(1);
+  four.four_update();
+  four.four_ifft();
+);
+
 function on_file_change () (
-  lfile = 0;
+  lfile = -1;
   filehandle=file_open(slider1);
   filehandle > 0 ? (
     lfile = slider1;
@@ -81,9 +102,9 @@ function on_file_change () (
       wavelen = (wavelen / 2) | 0;
     );
     normalize_wave(wavebuf, wavelen);
-    wave = 1;
     osc.wave_init(wavebuf, wavelen);
-    osc.wave_setf(50);
+    synthesize(wavebuf, wavelen);
+    resynthesize();
   );
 );
 
