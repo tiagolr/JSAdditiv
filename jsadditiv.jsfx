@@ -156,7 +156,7 @@ function on_file_change () (
 );
 
 function glide_calc_coefs(f_start, f_end, seconds) (
-  (f_end / f_start) ^ (1 / (seconds * srate));
+  (f_end - f_start) / (seconds * srate);
 );
 
 // copy filter coeficients from buffer1 to buffer2
@@ -260,7 +260,7 @@ local (note_repeat, ptr, env, i)
   );
 
   ptr = poly.array_add();
-  memset(ptr, 0, 13);
+  memset(ptr, 0, 15);
   ptr[0] = note;
   ptr[1] = vel / 127;
   ptr[2] = note2freq(note) / srate;
@@ -356,8 +356,8 @@ while (midirecv(offset, msg1, note, vel)) (
           p = mono.array_last();
           ptr[0] = p[0];
           //ptr[2] = note2freq(p[0]) / srate;
-          p[13] = note2freq(note)/srate; // target frequency
-          p[14] = glide_calc_coefs(p[2], p[13], 1); // frequency incremenet
+          ptr[13] = note2freq(note)/srate; // target frequency
+          ptr[14] = glide_calc_coefs(ptr[2], ptr[13], 1); // frequency incremenet
         );
       );
     ) : (
@@ -392,10 +392,11 @@ while(ptr >= 0) ( // for each note/voice
     adsr_process(pitchbuf);
     osc_pitch_det = pow(2, pitchbuf[0] * pitch_amt / 12);
   );
+  // apply glide - 2 = freq, 13 = target freq, 14 = freq incremenet
   ptr[13] && ptr[2] !== ptr[13] ? (
-    ptr[2] *= ptr[14];
-    ptr[14] > 1 && ptr[2] > ptr[13] ? ptr[2] = ptr[13];
-    ptr[14] < 1 && ptr[2] < ptr[13] ? ptr[2] = ptr[13];
+    ptr[2] += ptr[14];
+    ptr[14] > 0 && ptr[2] > ptr[13] ? ptr[2] = ptr[13];
+    ptr[14] < 0 && ptr[2] < ptr[13] ? ptr[2] = ptr[13];
   );
   loop(i = 0; uni_voices, // for each unison voice
     imod2 = i & 1;
