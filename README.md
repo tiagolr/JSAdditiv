@@ -10,7 +10,6 @@ Features:
 * Wave editors for harmonics amplitude and phase
 * 8 voices unison engine
 * Polyphony with one adsr envelope per voice
-* Mono mode
 * Free running and fixed phase osc modes
 
 Available on ReaPack
