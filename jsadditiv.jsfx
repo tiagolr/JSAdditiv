@@ -390,11 +390,11 @@ mouse.update_mouse_state();
 
 draw_wave(20, 20, 120, 60, wavebuf, wavelen);
 
-draw_grey_button(520 - 60, 2, 40, is_mono ? "Mono" : "Poly");
-mouse.left_click && mouse_in_rect(520 - 60, 0, 40, 10 + 2) ? (
-  is_mono = !is_mono;
-  on_slider();
-);
+//draw_grey_button(520 - 60, 2, 40, is_mono ? "Mono" : "Poly");
+//mouse.left_click && mouse_in_rect(520 - 60, 0, 40, 10 + 2) ? (
+//  is_mono = !is_mono;
+//  on_slider();
+//);
 
 draw_button(160-2, 10-2, 50, "Harm", !phase_mode);
 draw_button(160-2+50, 10-2, 50, "Phase", phase_mode);
