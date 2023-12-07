@@ -50,7 +50,7 @@ edit_mode = 0;
 phase_mode = 0;
 harm_index = 0; // index of harmonics displayed, 0 displays first 34 harmonics
 
-poly.array_init(0, 128, 4+8+1); // [0note, 1velocity, 2freq, 3phase, 4..12 phase_unison, 13 fastReleaseFlag]
+poly.array_init(0, 128, 4+8+1+2); // [0note, 1velocity, 2freq, 3phase, 4..12 phase_unison, 13 fastReleaseFlag, 14 targetFreq, 15 glideIncrement]
 mono.array_init(20000, 128, 2); // [ note, velocity ]
 envelope = 2000; // 129 * 7 buffer (where 129 buffer is the mono envelope)
 pitch_env = 3000; // 128 * 7 buffer
@@ -153,6 +153,10 @@ function on_file_change () (
     resynthesize();
     harm_index = 0;
   );
+);
+
+function glide_calc_coefs(f_start, f_end, seconds) (
+  (f_end / f_start) ^ (1 / (seconds * srate));
 );
 
 // copy filter coeficients from buffer1 to buffer2
@@ -324,7 +328,9 @@ while (midirecv(offset, msg1, note, vel)) (
       // if mono and there is a note in attack, decay or sustain
       p >= 0 && env[5] > 0 && env[5] < 8 ? (
         p[0] = note; // set new note
-        p[2] = note2freq(note) / srate; // set new freq
+        //p[2] = note2freq(note) / srate; // set new freq
+        p[13] = note2freq(note)/srate; // target frequency
+        p[14] = glide_calc_coefs(p[2], p[13], 1); // frequency incremenet
       );
       // if mono and there is a note releasing
       p >= 0 && env[5] == 8 ? (
@@ -349,7 +355,9 @@ while (midirecv(offset, msg1, note, vel)) (
         ) : (
           p = mono.array_last();
           ptr[0] = p[0];
-          ptr[2] = note2freq(p[0]) / srate;
+          //ptr[2] = note2freq(p[0]) / srate;
+          p[13] = note2freq(note)/srate; // target frequency
+          p[14] = glide_calc_coefs(p[2], p[13], 1); // frequency incremenet
         );
       );
     ) : (
@@ -383,6 +391,11 @@ while(ptr >= 0) ( // for each note/voice
     pitchbuf = pitch_env + ptr[0] * 7;
     adsr_process(pitchbuf);
     osc_pitch_det = pow(2, pitchbuf[0] * pitch_amt / 12);
+  );
+  ptr[13] && ptr[2] !== ptr[13] ? (
+    ptr[2] *= ptr[14];
+    ptr[14] > 1 && ptr[2] > ptr[13] ? ptr[2] = ptr[13];
+    ptr[14] < 1 && ptr[2] < ptr[13] ? ptr[2] = ptr[13];
   );
   loop(i = 0; uni_voices, // for each unison voice
     imod2 = i & 1;
