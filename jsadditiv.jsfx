@@ -2,20 +2,31 @@ desc: JSAdditiv
 tags: synth, instrument
 
 slider1:/tilr_JSAdditiv:Sine 1.wav:Wave
-slider2:vol=-12<-90, 0, .01>-Volume
-slider3:maxpoly=16<0, 32, 1>-Polyphony
-slider4:uni_voices=1<1, 8, 1>-Unison voices
-slider5:uni_detune=0.15<0, 1, 0.01>-Unison detune
-slider6:uni_pan=0.5<0, 1, 0.01>-Unison panning
+slider2:vol=80<0, 100, .01>-Volume
+slider4:_uni_voices=1<1, 8, 1>-Unison voices
+slider5:uni_detune=15<0, 100, 0.1>-Unison detune
+slider6:_uni_pan=50<0, 100, 0.1>-Unison panning
 
+slider7:osc_vel=100<0,100,0.1>-Velocity
 slider8:osc_att=1<1, 10000, 1:log>-Attack
 slider9:osc_dec=1<1, 10000, 1:log>-Decay
-slider10:osc_sus=0<-90, 0, .1:log>-Sustain Db
+slider10:_osc_sus=100<0, 100, .1>-Sustain Db
 slider11:osc_rel=500<1, 10000, 1:log>-Release
 
-slider13:flt_shape=0<0,2,1{Low Pass,Band Pass,High Pass}>-Filter shape
+slider13:flt_shape=0<0,3,1{Off,Low Pass,Band Pass,High Pass}>-Filter shape
 slider14:flt_freq=22000<20, 22000, 1:log>-Filter frequency
 slider15:flt_q=0.70<0.01, 40, 0.01:log>-Filter Q
+slider16:flt_amt=0<-100, 100, 0.01>-Filter ASDR amt.
+slider17:flt_att=1<1, 5000, 1:log>-Filter Attack
+slider18:flt_dec=500<1, 5000, 1:log>-Filter Decay
+slider19:_flt_sus=0<0, 100, 0.1>-Filter Sustain
+slider20:flt_rel=500<1, 5000, 1:log>-Filter Release
+
+slider22:pitch_amt=0<-24, 24, 1>-Pitch ASDR amt.
+slider23:pitch_att=1<1, 5000, 1:log>-Pitch Attack
+slider24:pitch_dec=500<1, 5000, 1:log>-Pitch Decay
+slider25:_pitch_sus=0<0, 100, 0.1>-Pitch Sustain
+slider26:pitch_rel=500<1, 5000, 1:log>-Pitch Release
 
 import add.wavetable.jsfx-inc
 import add.array.jsfx-inc
@@ -28,13 +39,12 @@ import add.fft_real_synth.jsfx-inc
 options:gfx_hz=60 no_meter
 
 @init
-lfile = -1;
-lmaxpoly = -1;
 wavebuf = 100000;
 wavechn = 0;
 wavelen = 0;
 wavesrate = 0;
 osc_free = 1;
+env_panel = 0;
 is_mono = 0;
 edit_mode = 0;
 phase_mode = 0;
@@ -42,10 +52,17 @@ harm_index = 0; // index of harmonics displayed, 0 displays first 34 harmonics
 
 poly.array_init(0, 128, 4+8); // [0note, 1velocity, 2freq, 3phase, 4..12 phase_unison]
 envelope = 2000; // 129 * 7 buffer (where 129 buffer is the mono envelope)
-remove_ptrs.array_init(5000, 128, 1);
+pitch_env = 3000; // 128 * 7 buffer
+filter_arr_l = 4000; // 128 * 11 buffer for filters one per key left channel
+filter_arr_r = 6000; // 128 * 11 buffer for filters one per key right channel
+filter_env = 8000; // 128 * 7 buffer for filter adsr
 last_phase = 10000; // 9 buffer for copy pasting note osc phases
 
-function db2gain(db) (10^(db / 20););
+function db2gain (db) local (val) (
+  val = 10^(db / 20);
+  val <= 0.001 ? 0 : val;
+);
+function normalize_vol_slider(val) ( val * 60 / 100 - 60 );
 function note2freq(n) ( 440 * pow(2, (n - 69) / 12); );
 
 function normalize_wave(buf, len)
@@ -117,10 +134,8 @@ function resynthesize() (
 );
 
 function on_file_change () (
-  lfile = -1;
   filehandle=file_open(slider1);
   filehandle > 0 ? (
-    lfile = slider1;
     file_riff(filehandle, wavechn, wavesrate);
     wavechn ? (
       wavelen = file_avail(filehandle);
@@ -140,17 +155,15 @@ function on_file_change () (
 );
 
 function on_slider() (
-  gain = db2gain(vol);
+  gain = db2gain(normalize_vol_slider(vol));
   lfile != slider1 ? on_file_change();
-  lmaxpoly != maxpoly ? (
-    lmaxpoly = maxpoly;
-    poly.array_clear();
-  );
-  is_mono = maxpoly == 0;
-  detune_amt = uni_detune * 3 / srate; // 3 hz max detune
-  flt_shape == 0 ? filter.svf_lp(flt_freq, flt_q, 1)
-    : flt_shape == 1 ? filter.svf_bp2(flt_freq, flt_q)
-    : flt_shape == 2 ? filter.svf_hp(flt_freq, flt_q, 1);
+  uni_pan = _uni_pan / 100;
+  osc_sus = normalize_vol_slider(_osc_sus);
+  flt_sus = _flt_sus / 100;
+  uni_voices = _uni_voices | 0;
+  odd_voices = uni_voices & 1;
+  pitch_sus = normalize_vol_slider(_pitch_sus);
+  detune_amt = uni_detune / 100 * 3 / srate; // 3 hz max detune
 );
 
 filter.svf_set_sample_rate(srate);
@@ -165,18 +178,24 @@ on_slider();
 
 @block
 
+// remove notes that finished adsr
+ptr = poly.array_first();
+while (ptr >= 0) (
+  env = envelope + ptr[0] * 7;
+  env[5] == 0 ? (
+    poly.array_remove(ptr);
+    ptr = poly.array_first();
+  ) : (
+    ptr = poly.array_next(ptr);
+  );
+);
+
 while (midirecv(offset, msg1, note, vel)) (
   event = msg1 & 0xF0;
   channel = msg1 & 0x0F;
 
   // Note on
   event == 0x90 && vel ? (
-
-    // if is mono and only one note playing on release stage
-    // remove that note
-    is_mono && poly.size == 1 && (envelope + 128 * 7)[5] == 8 ? (
-      poly.array_clear();
-    );
 
     // remove note if it is already playing
     // copy its phase into new note to avoid clicking
@@ -192,20 +211,8 @@ while (midirecv(offset, msg1, note, vel)) (
       poly.array_remove(ptr);
     );
 
-    // if is mono and multiple notes are playing copy the phase
-    // from last note to avoid clicking
-    is_mono && poly.size ? (
-      note_repeat = 1;
-      last_note = poly.array_last();
-      last_phase[0] = last_note[3];
-      loop(i = 1; 8,
-        last_phase[i] = last_note[3+i];
-        i += 1;
-      );
-    );
-
-    // if polyphony is full and not mono remove first element
-    poly.size == maxpoly && !is_mono ? (
+    // if polyphony is full
+    poly.size == 127 ? (
       poly.array_remove(poly.array_first());
     );
 
@@ -219,40 +226,35 @@ while (midirecv(offset, msg1, note, vel)) (
       i += 1;
     );
 
-    env = is_mono
-      ? envelope + 128 * 7
-      : envelope + note * 7;
-
-    !is_mono || poly.size == 1 ? (
-      adsr_seta(osc_att * 0.001, env);
-      adsr_setd(osc_dec * 0.001, env);
-      adsr_sets(exp(log(10)/20 * osc_sus), env);
-      adsr_setr(osc_rel * 0.001, env);
-      adsr_a(vel / 128, env);
-    );
+    env = envelope + note * 7;
+    adsr_seta(osc_att * 0.001, env);
+    adsr_setd(osc_dec * 0.001, env);
+    adsr_sets(exp(log(10)/20 * osc_sus), env);
+    adsr_setr(osc_rel * 0.001, env);
+    adsr_a(min(vel / 127 + (1 - osc_vel / 100), 1), env);
+    
+    env = pitch_env + note * 7;
+    adsr_seta(pitch_att * 0.001, env);
+    adsr_setd(pitch_dec * 0.001, env);
+    adsr_sets(pitch_sus, env);
+    adsr_setr(pitch_rel * 0.001, env);
+    adsr_a(1, env);
+    
+    env = filter_env + note * 7;
+    adsr_seta(flt_att * 0.001, env);
+    adsr_setd(flt_dec * 0.001, env);
+    adsr_sets(flt_sus, env);
+    adsr_setr(flt_rel * 0.001, env);
+    adsr_a(1, env);
   );
 
   // Note off
   event == 0x80 || (event == 0x90 && !vel) ? (
     ptr = poly.array_find(note);
-    is_mono && ptr >= 0 ? (
-      poly.size == 1
-        ? adsr_r(envelope + 128 * 7)
-        : (
-          // removing note in mono mode, if its last note, copy phase
-          // into the next note that will be playing
-          last_note = poly.array_last();
-          poly.array_remove(ptr);
-          last_note == ptr ? (
-            next_note = poly.array_last();
-            loop(i = 0; 9,
-              next_note[i + 3] = last_note[i + 3];
-              i += 1;
-            );
-          );
-        );
-    ) : (
-      ptr >= 0 ? adsr_r(envelope + note * 7);
+    ptr >= 0 ? (
+      adsr_r(envelope + note * 7);
+      adsr_r(pitch_env + note * 7);
+      adsr_r(filter_env + note * 7);
     );
   );
 
@@ -271,79 +273,62 @@ last_play_state == 0 && play_state ? (
 );
 last_play_state = play_state;
 
-lfile >= 0 ? (
-  outl = 0;
-  outr = 0;
-  odd_voices = uni_voices & 1;
-  remove_ptrs.array_clear();
-  ptr = is_mono
-    ? poly.array_last()
-    : poly.array_first();
-  while(ptr >= 0) ( // for each note/voice
-    envbuf = is_mono
-      ? envelope + 128 * 7
-      : envelope + ptr[0] * 7;
-    env_state = adsr_process(envbuf);
-    loop(i = 0; uni_voices | 0, // for each unison voice
-      imod2 = i & 1;
-      pos = i == 0 && odd_voices ? 0 : imod2 ? -1 : 1; // center, left or right position
-      detune = !odd_voices
-        ? pos * detune_amt * (i + 1 - imod2) / uni_voices
-        : pos * detune_amt * (i + imod2) / uni_voices;
-      osc.wave_setdt(ptr[2] + detune);
-      osc.wave_sync(ptr[i + 3]);
-      wave = osc.wave_spline3();
-      pan = !odd_voices
-        ? pos * uni_pan * (i + 1 - imod2) / uni_voices
-        : pos * uni_pan * (i + imod2) / uni_voices;
-      outl += wave * (1 + pan) * envbuf[];
-      outr += wave * (1 - pan) * envbuf[];
-      ptr[i + 3] = osc.t; // update osc phase
-      i += 1;
-    );
-
-    // mark note for deletion
-    env_state == 0 ? (
-      p = remove_ptrs.array_add();
-      p[0] = ptr[0];
-    );
-
-    ptr = poly.array_next(ptr);
+outl = 0;
+outr = 0;
+ptr = poly.array_first();
+while(ptr >= 0) ( // for each note/voice
+  envbuf = envelope + ptr[0] * 7;
+  env_state = adsr_process(envbuf);
+  osc_pitch_det = 1;
+  pitch_amt ? (
+    pitchbuf = pitch_env + ptr[0] * 7;
+    adsr_process(pitchbuf);
+    osc_pitch_det = pow(2, pitchbuf[0] * pitch_amt / 100 / 12);
+  );
+  loop(i = 0; uni_voices, // for each unison voice
+    imod2 = i & 1;
+    pos = i == 0 && odd_voices ? 0 : imod2 ? -1 : 1; // center, left or right position
+    detune = !odd_voices
+      ? pos * detune_amt * (i + 1 - imod2) / uni_voices
+      : pos * detune_amt * (i + imod2) / uni_voices;
+    osc.wave_setdt(ptr[2] * osc_pitch_det + detune);
+    osc.wave_sync(ptr[i + 3]);
+    wave = osc.wave_spline3();
+    pan = !odd_voices
+      ? pos * uni_pan * (i + 1 - imod2) / uni_voices
+      : pos * uni_pan * (i + imod2) / uni_voices;
+    outl += wave * (1 + pan) * envbuf[];
+    outr += wave * (1 - pan) * envbuf[];
+    ptr[i + 3] = osc.t; // update osc phase
+    i += 1;
   );
 
-  // remove notes that finished adsr
-  ptr = remove_ptrs.array_first();
-  while(ptr >= 0) (
-    p = poly.array_find(ptr[0]);
-    p >= 0 ? poly.array_remove(p);
-    ptr = remove_ptrs.array_next(ptr);
-  );
-
-  remove_ptrs.array_clear();
-
-  (flt_shape == 0 && flt_freq < 22000) ||
-  (flt_shape == 1) ||
-  (flt_shape == 2 && flt_freq > 20) ? (
-    filter.svf_tick();
-    mult = flt_shape == 1 ? flt_q : 1;
-    outl = filter.svf_svf0(outl) * mult;
-    outr = filter.svf_svf1(outr) * mult;
-  );
-
-  spl0 += outl * gain;
-  spl1 += outr * gain;
+  ptr = poly.array_next(ptr);
 );
 
-@gfx 520 250
+
+(flt_shape == 0 && flt_freq < 22000) ||
+(flt_shape == 1) ||
+(flt_shape == 2 && flt_freq > 20) ? (
+  filter.svf_tick();
+  mult = flt_shape == 1 ? flt_q : 1;
+  outl = filter.svf_svf0(outl) * mult;
+  outr = filter.svf_svf1(outr) * mult;
+);
+
+spl0 += outl * gain;
+spl1 += outr * gain;
+
+@gfx 520 270
 
 gfx_clear = COLOR_BG;
 mouse.update_mouse_state();
 
 draw_wave(20, 20, 120, 60, wavebuf, wavelen);
 
-draw_grey_button(520 - 60, 2, 40, maxpoly ? "Poly" : "Mono");
+draw_grey_button(520 - 60, 2, 40, is_mono ? "Mono" : "Poly");
 mouse.left_click && mouse_in_rect(520 - 60, 0, 40, 10 + 2) ? (
-  maxpoly = maxpoly ? 0 : 16;
+  is_mono = !is_mono;
   on_slider();
 );
 
@@ -379,7 +364,7 @@ edit_mode && !mouse.left ? (
 max_harm = harm_index + 1 >= ceil(four.size / 34) ? (harm_index + 1) * 34 - four.size - 1 : 34;
 draw_harmonics(160, 20, 340, 60, four.coef+2 +harm_index*34*2, max_harm);
 
-draw_knob(20, 110, 2, "Vol", -12, -90, 0, 0, 0, sprintf(#, "%.1f Db", slider(2)));
+draw_knob(20, 110, 2, "Vol", 80, 0, 100, 0, 0, sprintf(#, "%i%%", slider(2)));
 
 set_color(0x666666);
 gfx_x = 160; gfx_y = 20+70;
@@ -391,27 +376,53 @@ mouse.left_click && mouse_in_rect(220, 20 - 2+70, 40, 10+2) ? (
 );
 
 draw_knob(160, 40+70, 4, "Voices", 1, 1, 8, 0, 0, sprintf(#, "%i", slider(4)));
-draw_knob(220, 40+70, 5, "Det", 0.15, 0, 1, 0, 0, sprintf(#, "%.2f", slider(5)));
-draw_knob(160, 110+70, 6, "Pan", 0.5, 0, 1, 0, 0, sprintf(#, "%.2f", slider(6)));
+draw_knob(220, 40+70, 5, "Det", 15, 0, 100, 0, 0, sprintf(#, "%i%%", slider(5)));
+draw_knob(280, 40+70, 6, "Pan", 50, 0, 100, 0, 0, sprintf(#, "%i%%", slider(6)));
 
 set_color(0x666666);
-gfx_x = 280; gfx_y = 20 + 70;
+gfx_x = 160; gfx_y = 110 + 70;
 gfx_drawstr("ADSR");
 
-draw_knob(280, 40+70, 8, "Att", 1, 1, 10000, 1, 0, sprintf(#, "%i ms", slider(8)));
-draw_knob(340, 40+70, 9, "Dec", 1, 1, 10000, 1, 0, sprintf(#, "%i ms", slider(9)));
-draw_knob(280, 110+70, 10, "Sus", 0, -90, 0, 0, 0, sprintf(#, "%.2f Db", slider(10)));
-draw_knob(340, 110+70, 11, "Rel", 1, 1, 10000, 1, 0, sprintf(#, "%i ms", slider(11)));
+draw_button(200, 110+70, 60, "Env", env_panel == 0);
+mouse.left_click && mouse_in_rect(200, 110-2+70, 60, 14) ? env_panel = 0;
+draw_button(260, 110+70, 60, "Pitch", env_panel == 1);
+mouse.left_click && mouse_in_rect(260, 110-2+70, 60, 14) ? env_panel = 1;
+draw_button(320, 110+70, 60, "Filter", env_panel == 2);
+mouse.left_click && mouse_in_rect(320, 110-2+70, 60, 14) ? env_panel = 2;
+
+env_panel == 0 ? (
+  draw_knob(160, 130+70, 7, "Vel", 0, 0, 100, 0, 0, sprintf(#, "%i%%", slider(7)));
+  draw_knob(220, 130+70, 8, "Att", 1, 1, 10000, 1, 0, sprintf(#, "%i ms", slider(8)));
+  draw_knob(280, 130+70, 9, "Dec", 1, 1, 10000, 1, 0, sprintf(#, "%i ms", slider(9)));
+  draw_knob(340, 130+70, 10, "Sus", 100, 0, 100, 0, 0, sprintf(#, "%i", slider(10)));
+  draw_knob(400, 130+70, 11, "Rel", 1, 1, 10000, 1, 0, sprintf(#, "%i ms", slider(11)));
+);
+
+env_panel == 1 ? (
+  draw_knob(160, 130+70, 22, "Amt", 0, -24, 24, 0, 1, sprintf(#, "%i", slider(22)));
+  draw_knob(220, 130+70, 23, "Att", 1, 1, 10000, 1, 0, sprintf(#, "%i ms", slider(23)));
+  draw_knob(280, 130+70, 24, "Dec", 1, 1, 10000, 1, 0, sprintf(#, "%i ms", slider(24)));
+  draw_knob(340, 130+70, 25, "Sus", 100, 0, 100, 0, 0, sprintf(#, "%i", slider(25)));
+  draw_knob(400, 130+70, 26, "Rel", 1, 1, 10000, 1, 0, sprintf(#, "%i ms", slider(26)));
+);
+
+env_panel == 2 ? (
+  draw_knob(160, 130+70, 16, "Amt", 0, -100, 100, 0, 1, sprintf(#, "%i%%", slider(16)));
+  draw_knob(220, 130+70, 17, "Att", 1, 1, 10000, 1, 0, sprintf(#, "%i ms", slider(17)));
+  draw_knob(280, 130+70, 18, "Dec", 1, 1, 10000, 1, 0, sprintf(#, "%i ms", slider(18)));
+  draw_knob(340, 130+70, 19, "Sus", 100, 0, 100, 0, 0, sprintf(#, "%i", slider(19)));
+  draw_knob(400, 130+70, 20, "Rel", 1, 1, 10000, 1, 0, sprintf(#, "%i ms", slider(20)));
+);
 
 set_color(0x666666);
 gfx_x = 400; gfx_y = 20+70;
 gfx_drawstr("FILTER");
 
-shape_name = flt_shape == 0 ? "LP" : flt_shape == 1 ? "BP" : "HP";
+shape_name = flt_shape == 0 ? "Off" : flt_shape == 1 ? "LP" : flt_shape == 2 ? "BP" : "HP";
 draw_button(520 - 60, 20+70, 40, shape_name, 0);
 mouse.left_click && mouse_in_rect(520-60, 20 - 2+70, 40, 10 + 2) ? (
   gfx_x = 520 - 60; gfx_y = 30+70;
-  choice = gfx_showmenu("LP|BP|HP");
+  choice = gfx_showmenu("Off|LP|BP|HP");
   choice > 0 ? slider(13) = choice - 1;
   on_slider();
 );

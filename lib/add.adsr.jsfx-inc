@@ -94,6 +94,7 @@ function adsr_a(scale, buf)
 );
 
 function adsr_process(buf)
+local (env, a, d, s, r, state, scale)
   //instance(state, a, d, s, r, env, scale)
 (
   env = buf[0];
