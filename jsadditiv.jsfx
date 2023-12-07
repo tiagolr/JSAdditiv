@@ -50,7 +50,8 @@ edit_mode = 0;
 phase_mode = 0;
 harm_index = 0; // index of harmonics displayed, 0 displays first 34 harmonics
 
-poly.array_init(0, 128, 4+8); // [0note, 1velocity, 2freq, 3phase, 4..12 phase_unison]
+poly.array_init(0, 128, 4+8+1); // [0note, 1velocity, 2freq, 3phase, 4..12 phase_unison, 13 fastReleaseFlag]
+mono.array_init(20000, 128, 2); // [ note, velocity ]
 envelope = 2000; // 129 * 7 buffer (where 129 buffer is the mono envelope)
 pitch_env = 3000; // 128 * 7 buffer
 filter_arr_l = 4000; // 128 * 11 buffer for filters one per key left channel
@@ -223,6 +224,7 @@ function on_slider() (
 
 @serialize
 file_var(0, osc_free);
+file_var(0, is_mono);
 file_mem(0, wavebuf, wavelen + four.size * 4);
 
 @slider
@@ -230,6 +232,61 @@ file_mem(0, wavebuf, wavelen + four.size * 4);
 on_slider();
 
 @block
+
+function on_note(note, vel)
+local (note_repeat, ptr, env, i)
+(
+  // remove note if it is already playing
+  // copy its phase into new note to avoid clicking
+  note_repeat = 0;
+  ptr = poly.array_find(note);
+  ptr >= 0 ? (
+    note_repeat = 1;
+    last_phase[0] = ptr[3];
+    loop(i = 1; 8,
+      last_phase[i] = ptr[3+i];
+      i += 1;
+    );
+    poly.array_remove(ptr);
+  );
+
+  // if polyphony is full
+  poly.size == 127 ? (
+    poly.array_remove(poly.array_first());
+  );
+
+  ptr = poly.array_add();
+  memset(ptr, 0, 13);
+  ptr[0] = note;
+  ptr[1] = vel / 127;
+  ptr[2] = note2freq(note) / srate;
+  ptr[3] = note_repeat ? last_phase[0] : osc_free ? rand(2) - 1 : 0; // osc start phase
+  loop(i = 4; 8,
+    ptr[i] = note_repeat ? last_phase[i-3] : osc_free ? rand(2) - 1 : 0; // unison start phase
+    i += 1;
+  );
+
+  env = envelope + note * 7;
+  adsr_seta(osc_att * 0.001, env);
+  adsr_setd(osc_dec * 0.001, env);
+  adsr_sets(exp(log(10)/20 * osc_sus), env);
+  adsr_setr(osc_rel * 0.001, env);
+  adsr_a(min(vel / 127 + (1 - osc_vel / 100), 1), env);
+
+  env = pitch_env + note * 7;
+  adsr_seta(pitch_att * 0.001, env);
+  adsr_setd(pitch_dec * 0.001, env);
+  adsr_sets(pitch_sus, env);
+  adsr_setr(pitch_rel * 0.001, env);
+  adsr_a(1, env);
+
+  env = filter_env + note * 7;
+  adsr_seta(flt_att * 0.001, env);
+  adsr_setd(flt_dec * 0.001, env);
+  adsr_sets(flt_sus, env);
+  adsr_setr(flt_rel * 0.001, env);
+  adsr_a(1, env);
+);
 
 // remove notes that finished adsr
 ptr = poly.array_first();
@@ -243,71 +300,65 @@ while (ptr >= 0) (
   );
 );
 
+// if mono and all notes finished playing
+// and there are notes queued play last note
+is_mono && !poly.size && mono.size ? (
+  ptr = mono.array_last();
+  on_note(ptr[0], ptr[1]);
+);
+
 while (midirecv(offset, msg1, note, vel)) (
   event = msg1 & 0xF0;
   channel = msg1 & 0x0F;
 
   // Note on
   event == 0x90 && vel ? (
-
-    // remove note if it is already playing
-    // copy its phase into new note to avoid clicking
-    note_repeat = 0;
-    ptr = poly.array_find(note);
-    ptr >= 0 ? (
-      note_repeat = 1;
-      last_phase[0] = ptr[3];
-      loop(i = 1; 8,
-        last_phase[i] = ptr[3+i];
-        i += 1;
+    is_mono ? (
+      ptr = mono.array_find(note);
+      ptr >= 0 ? mono.array_remove(ptr);
+      ptr = mono.array_add();
+      ptr[0] = note;
+      ptr[1] = vel;
+      p = poly.array_first();
+      env = envelope + p[0] * 7;
+      // if mono and there is a note in attack, decay or sustain
+      p >= 0 && env[5] > 0 && env[5] < 8 ? (
+        p[0] = note; // set new note
+        p[2] = note2freq(note) / srate; // set new freq
       );
-      poly.array_remove(ptr);
+      // if mono and there is a note releasing
+      p >= 0 && env[5] == 8 ? (
+        p[12] = 1; // toggle fast release
+      );
+    ) : (
+      on_note(note, vel);
     );
-
-    // if polyphony is full
-    poly.size == 127 ? (
-      poly.array_remove(poly.array_first());
-    );
-
-    ptr = poly.array_add();
-    ptr[0] = note;
-    ptr[1] = vel / 127;
-    ptr[2] = note2freq(note) / srate;
-    ptr[3] = note_repeat ? last_phase[0] : osc_free ? rand(2) - 1 : 0; // osc start phase
-    loop(i = 4; 8,
-      ptr[i] = note_repeat ? last_phase[i-3] : osc_free ? rand(2) - 1 : 0; // unison start phase
-      i += 1;
-    );
-
-    env = envelope + note * 7;
-    adsr_seta(osc_att * 0.001, env);
-    adsr_setd(osc_dec * 0.001, env);
-    adsr_sets(exp(log(10)/20 * osc_sus), env);
-    adsr_setr(osc_rel * 0.001, env);
-    adsr_a(min(vel / 127 + (1 - osc_vel / 100), 1), env);
-
-    env = pitch_env + note * 7;
-    adsr_seta(pitch_att * 0.001, env);
-    adsr_setd(pitch_dec * 0.001, env);
-    adsr_sets(pitch_sus, env);
-    adsr_setr(pitch_rel * 0.001, env);
-    adsr_a(1, env);
-
-    env = filter_env + note * 7;
-    adsr_seta(flt_att * 0.001, env);
-    adsr_setd(flt_dec * 0.001, env);
-    adsr_sets(flt_sus, env);
-    adsr_setr(flt_rel * 0.001, env);
-    adsr_a(1, env);
   );
 
   // Note off
   event == 0x80 || (event == 0x90 && !vel) ? (
-    ptr = poly.array_find(note);
-    ptr >= 0 ? (
-      adsr_r(envelope + note * 7);
-      adsr_r(pitch_env + note * 7);
-      adsr_r(filter_env + note * 7);
+    is_mono ? (
+      ptr = mono.array_find(note);
+      ptr >= 0 ? mono.array_remove(ptr);
+      ptr = poly.array_first();
+      ptr[0] == note ? (
+        !mono.size ? (
+          adsr_r(envelope + note * 7);
+          adsr_r(pitch_env + note * 7);
+          adsr_r(filter_env + note * 7);
+        ) : (
+          p = mono.array_last();
+          ptr[0] = p[0];
+          ptr[2] = note2freq(p[0]) / srate;
+        );
+      );
+    ) : (
+      ptr = poly.array_find(note);
+      ptr >= 0 ? (
+        adsr_r(envelope + note * 7);
+        adsr_r(pitch_env + note * 7);
+        adsr_r(filter_env + note * 7);
+      );
     );
   );
 
@@ -376,6 +427,11 @@ while(ptr >= 0) ( // for each note/voice
 
   spl0 += outl * gain;
   spl1 += outr * gain;
+
+  ptr[12] ? ( // fastReleaseFlag
+    envbuf[0] -= 0.01;
+    envbuf[0] < 0 ? envbuf[0] = 0;
+  );
 
   ptr = poly.array_next(ptr);
 );
