@@ -9,7 +9,6 @@ Features:
 * Additive synthesis engine that allows to modify the wave
 * Wave editors for harmonics amplitude and phase
 * 8 voices unison engine
-* Polyphony with one adsr envelope per voice
-* Free running and fixed phase osc modes
+* Pitch, amplitude and filter adsr
 
 Available on ReaPack
