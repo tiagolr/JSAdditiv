@@ -2,7 +2,7 @@
 
 Polyphonic additive synthesizer
 
-![JSDrumpad.png](doc/ss.png)
+![JSAdditiv.png](doc/ss.png)
 
 Features:
 * Wavetable oscillator that reads single cycle waveforms from disk
