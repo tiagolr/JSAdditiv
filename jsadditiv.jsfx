@@ -120,10 +120,8 @@ local (window)
   window = 512 >= len ? 512
          : 1024 >= len ? 1024
          : 2048 >= len ? 2048
-         : 4096 >= len ? 4096
-         : 8192 >= len ? 8192
-         : 16384 >= len ? 16384
-         : 32768;
+         : 4096;
+  memset(buf+window * 2, 0, 100000); // clear four.coef memory
   four.four_init(buf, window);
   four.four_fft();
 );
@@ -135,7 +133,7 @@ function resynthesize() (
   four.four_setf(1);
   four.four_update();
   four.four_ifft();
-  semi_normalize_wave(wavebuf, wavelen); // correct signal strenght after summing frequencies
+  semi_normalize_wave(wavebuf, four.size * 2); // correct signal strenght after summing frequencies
 );
 
 function read_file(filehandle) (
