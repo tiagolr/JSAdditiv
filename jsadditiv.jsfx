@@ -354,9 +354,6 @@ while(ptr >= 0) ( // for each note/voice
   ptr = poly.array_next(ptr);
 );
 
-spl0 += outl * gain;
-spl1 += outr * gain;
-
 @gfx 520 270
 
 gfx_clear = COLOR_BG;
