@@ -67,6 +67,20 @@ function db2gain (db) local (val) (
 function normalize_vol_slider(val) ( val * 60 / 100 - 60 );
 function note2freq(n) ( 440 * pow(2, (n - 69) / 12); );
 
+function rc_set(rc)
+  instance(a) (
+    a = 1 / (rc * srate + 1);
+);
+function rc_lp(sample)
+  instance(lp, a) (
+    lp += a * (sample - lp);
+);
+function smooth()
+  instance (lp, smooth) (
+    lp = smooth;
+    smooth = this.rc_lp(this);
+);
+
 function normalize_wave(buf, len)
 local (_min, _max, i)
 (
@@ -196,6 +210,7 @@ function on_slider() (
 
 // FIX - read initial wave from string instead of slider
 read_file_string("tilr_JSAdditiv/Sine 1.wav");
+gain.rc_set(0.0033);
 
 @serialize
 file_var(0, osc_free);
@@ -296,6 +311,7 @@ while (midirecv(offset, msg1, note, vel)) (
 );
 
 @sample
+gain.smooth();
 
 ptr = poly.array_first();
 while(ptr >= 0) ( // for each note/voice
@@ -348,8 +364,8 @@ while(ptr >= 0) ( // for each note/voice
     outr = rbj_df1(filterbuf_r, outr);
   );
 
-  spl0 += outl * gain;
-  spl1 += outr * gain;
+  spl0 += outl * gain.smooth;
+  spl1 += outr * gain.smooth;
 
   ptr = poly.array_next(ptr);
 );
