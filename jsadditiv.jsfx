@@ -210,7 +210,10 @@ function on_slider() (
 
 // FIX - read initial wave from string instead of slider
 read_file_string("tilr_JSAdditiv/Sine 1.wav");
+
+// Init smoothing
 gain.rc_set(0.0033);
+gain.smooth = db2gain(normalize_vol_slider(vol));
 
 @serialize
 file_var(0, osc_free);
@@ -264,7 +267,7 @@ while (midirecv(offset, msg1, note, vel)) (
     ptr[0] = note;
     ptr[1] = vel / 127;
     ptr[2] = note2freq(note) / srate;
-    ptr[3] = note_repeat ? last_phase[0] : osc_free ? rand(2) - 1 : 0; // osc start phase
+    ptr[3] = note_repeat ? last_phase[0] : 0; // osc start phase
     loop(i = 4; 8,
       ptr[i] = note_repeat ? last_phase[i-3] : osc_free ? rand(2) - 1 : 0; // unison start phase
       i += 1;
